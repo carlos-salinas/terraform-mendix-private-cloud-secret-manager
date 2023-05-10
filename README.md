@@ -87,25 +87,20 @@ This is a Terraform module which provisions and configures the required AWS reso
 
     ```
         ## Create sa for the app to acccess the secret store
-        {{- range $.Values.environmentsInternalNames }}
-        ---
         apiVersion: v1
         automountServiceAccountToken: true
         kind: ServiceAccount
         metadata:
           annotations:
-            eks.amazonaws.com/role-arn: arn:aws:iam::{{ $.Values.accountID }}:role/{{ $.Values.clusterName }}-app-role-{{ . }}
+            eks.amazonaws.com/role-arn: arn:aws:iam::{{ $.Values.accountID }}:role/{{ $.Values.clusterName }}-app-role-{{ $.Values.environmentInternalName }}
             privatecloud.mendix.com/environment-account: "true"
-          name: {{ . }}
+          name: {{ $.Values.environmentInternalName }}
           namespace: mendix
-        {{- end }}
     ```
 
 5. Create the `SecretProviderClass` object which maps the secret value on AWS Secret Manager with the corresponding app environment settings in the K8s namespace
 
     ```
-        {{- range $.Values.environmentsInternalNames }}
-        ---
         apiVersion: secrets-store.csi.x-k8s.io/v1
         kind: SecretProviderClass
         metadata:
@@ -117,7 +112,7 @@ This is a Terraform module which provisions and configures the required AWS reso
           provider: aws
           parameters:
             objects: |
-              - objectName: "{{ $.Values.clusterName }}-{{ . }}-secrets"
+              - objectName: "{{ $.Values.clusterName }}-{{ $.Values.environmentInternalName }}-secrets"
                 objectType: secretsmanager
                 jmesPath:
                 - path: '"database-type"'
@@ -138,6 +133,4 @@ This is a Terraform module which provisions and configures the required AWS reso
                   objectAlias: "storage-endpoint"
                 - path: '"storage-bucket-name"'
                   objectAlias: "storage-bucket-name"
-        {{- end }}
-
     ```
