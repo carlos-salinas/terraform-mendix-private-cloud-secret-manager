@@ -4,29 +4,35 @@
 
 This is a Terraform module which provisions and configures the required AWS resources and [K8S Secret Store CSI objects](https://secrets-store-csi-driver.sigs.k8s.io/) to allow a Mendix app to retrieve its environment settings from AWS Secret Manager, thus the app can store sensitive data externally, such as passwords,for easier gobernance and increased security.
 
+## Architecture
+
+The Mendix integration with **AWS Secret Manager** is the result of combining AWS IRSA to access the secrets, with a IAM Role assigned to the Mendix pod in EKS, leveraging Secret Store CSI for a Kubernetes vetted approach.
+
+![Architecture for AWS IRSA](./doc/deployment_guide/images/aws-irsa.png)![Architecture for Secret Store CSI](./doc/deployment_guide/images/secret-store-csi.png)
+
 ## Steps to setup a new app enviroment
 
 1. Create a new secret on AWS Secret Manager and set its value
 
     ```
     resource "aws_secretsmanager_secret" "apps_secrets" {
-      name                    = var.secrets_manager_name
-      recovery_window_in_days = 7
+        name                    = local.aws_secret_manager_entry
+        recovery_window_in_days = 7
     }
 
     resource "aws_secretsmanager_secret_version" "apps_secrets_version" {
-      secret_id = aws_secretsmanager_secret.apps_secrets.id
-      secret_string = jsonencode({
+        secret_id = aws_secretsmanager_secret.apps_secrets.id
+        secret_string = jsonencode({
         storage-service-name = "com.mendix.storage.s3",
         storage-endpoint     = var.file_storage_endpoint
         storage-bucket-name  = var.environment_internal_name,
         database-type        = var.database_type,
-        database-jdbc-url    = var.database_jdb_url,
+        database-jdbc-url    = var.database_jdbc_url,
         database-name        = var.database_name,
         database-username    = var.database_username,
         database-password    = var.database_password,
         database-host        = var.database_host
-      })
+        })
     }
 
     ```
@@ -38,22 +44,23 @@ This is a Terraform module which provisions and configures the required AWS reso
     resource "aws_iam_role" "app_irsa_role" {
       name = "${var.cluster_name}-app-role-${var.environment_internal_name}"
       assume_role_policy = jsonencode({
-        "Version" : "2012-10-17",
-        "Statement" : [
+      "Version" : "2012-10-17",
+      "Statement" : [
           {
-            "Effect" : "Allow",
-            "Principal" : {
-              "Federated" : "arn:aws:iam::${var.aws_caller_identity_account_id}:oidc-provider/${var.oidc_provider}"
-            },
-            "Action" : "sts:AssumeRoleWithWebIdentity",
-            "Condition" : {
+          "Effect" : "Allow",
+          "Principal" : {
+              "Federated" : "arn:aws:iam::${var.aws_account_id}:oidc-provider/${var.aws_oidc_provider}"
+          },
+          "Action" : "sts:AssumeRoleWithWebIdentity",
+          "Condition" : {
               "StringEquals" : {
-                "${var.oidc_provider}:aud" : "sts.amazonaws.com",
-                "${var.oidc_provider}:sub" : "${var.namespace}:${var.environment_internal_name}"
+
+              "${var.aws_oidc_provider}:sub" : "system:serviceaccount:${var.namespace}:${var.environment_internal_name}",
+              "${var.aws_oidc_provider}:aud" : "sts.amazonaws.com"
               }
-            }
           }
-        ]
+          }
+      ]
       })
     }
     ```
@@ -62,24 +69,24 @@ This is a Terraform module which provisions and configures the required AWS reso
 
     ```
     resource "aws_iam_role_policy" "app_irsa_policy" {
-      name = "${var.cluster_name}-app-policy"
-      role = aws_iam_role.app_irsa_role.id
+        name = "${var.cluster_name}-app-policy"
+        role = aws_iam_role.app_irsa_role.id
 
-      policy = jsonencode({
+        policy = jsonencode({
         "Version" : "2012-10-17",
         "Statement" : [
-          {
+            {
             "Sid" : "VisualEditor0",
             "Effect" : "Allow",
             "Action" : [
-              "secretsmanager:GetSecretValue",
-              "secretsmanager:DescribeSecret"
+                "secretsmanager:GetSecretValue",
+                "secretsmanager:DescribeSecret"
             ],
 
             "Resource" : aws_secretsmanager_secret.apps_secrets.arn
-          }
+            }
         ]
-      })
+        })
     }
     ```
 
@@ -95,7 +102,7 @@ This is a Terraform module which provisions and configures the required AWS reso
             eks.amazonaws.com/role-arn: arn:aws:iam::{{ $.Values.accountID }}:role/{{ $.Values.clusterName }}-app-role-{{ $.Values.environmentInternalName }}
             privatecloud.mendix.com/environment-account: "true"
           name: {{ $.Values.environmentInternalName }}
-          namespace: mendix
+          namespace: {{ $.Values.namespace }}
     ```
 
 5. Create the `SecretProviderClass` object which maps the secret value on AWS Secret Manager with the corresponding app environment settings in the K8s namespace
@@ -104,15 +111,15 @@ This is a Terraform module which provisions and configures the required AWS reso
         apiVersion: secrets-store.csi.x-k8s.io/v1
         kind: SecretProviderClass
         metadata:
-          name: {{ . }}
-          namespace: mendix
+          name: {{ $.Values.environmentInternalName }}
+          namespace: {{ $.Values.namespace }}
           annotations:
             privatecloud.mendix.com/environment-class: "true"
         spec:
           provider: aws
           parameters:
             objects: |
-              - objectName: "{{ $.Values.clusterName }}-{{ $.Values.environmentInternalName }}-secrets"
+              - objectName: "{{ $.Values.clusterName }}-{{ $.Values.environmentInternalName }}"
                 objectType: secretsmanager
                 jmesPath:
                 - path: '"database-type"'
