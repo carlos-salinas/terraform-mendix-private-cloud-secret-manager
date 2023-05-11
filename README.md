@@ -6,9 +6,13 @@ This is a Terraform module which provisions and configures the required AWS reso
 
 ## Architecture
 
-The Mendix integration with **AWS Secret Manager** is the result of combining AWS IRSA to access the secrets, with a IAM Role assigned to the Mendix pod in EKS, leveraging Secret Store CSI for a Kubernetes vetted approach.
+The Mendix integration with **AWS Secret Manager** is the result of combining [AWS IRSA](https://docs.aws.amazon.com/eks/latest/userguide/iam-roles-for-service-accounts.html) to access the secrets, with a IAM Role assigned to the Mendix pod in EKS, leveraging [Secret Store CSI](https://secrets-store-csi-driver.sigs.k8s.io/concepts.html) for a Kubernetes vetted approach.
 
-![Architecture for AWS IRSA](./doc/deployment_guide/images/aws-irsa.png)![Architecture for Secret Store CSI](./doc/deployment_guide/images/secret-store-csi.png)
+### AWS IRSA architecture diagram
+![Architecture for AWS IRSA](./doc/deployment_guide/images/aws-irsa.png)
+
+### Secret Store CSI for AWS Secret Manager architecture diagram
+![Architecture for Secret Store CSI](./doc/deployment_guide/images/secret-store-csi.png)
 
 ## Steps to setup a new app enviroment
 
